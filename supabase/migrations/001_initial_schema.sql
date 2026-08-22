@@ -195,14 +195,12 @@ ALTER TABLE public.leave_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY;
 
 -- 1. PROFILES POLICIES
--- Read: Own profile OR Admin can read all
 DROP POLICY IF EXISTS "Users can read own profile or admin reads all" ON public.profiles;
 CREATE POLICY "Users can read own profile or admin reads all"
 ON public.profiles FOR SELECT
 TO authenticated
 USING (auth.uid() = id OR public.is_admin(auth.uid()));
 
--- Update: Employee can update own record, Admin can update any
 DROP POLICY IF EXISTS "Users can update own profile or admin updates any" ON public.profiles;
 CREATE POLICY "Users can update own profile or admin updates any"
 ON public.profiles FOR UPDATE
@@ -210,7 +208,6 @@ TO authenticated
 USING (auth.uid() = id OR public.is_admin(auth.uid()))
 WITH CHECK (auth.uid() = id OR public.is_admin(auth.uid()));
 
--- Insert: Self or Admin
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 CREATE POLICY "Users can insert own profile"
 ON public.profiles FOR INSERT
@@ -218,21 +215,18 @@ TO authenticated
 WITH CHECK (auth.uid() = id OR public.is_admin(auth.uid()));
 
 -- 2. ATTENDANCE POLICIES
--- Read: Own attendance OR Admin reads all
 DROP POLICY IF EXISTS "Users read own attendance or admin reads all" ON public.attendance;
 CREATE POLICY "Users read own attendance or admin reads all"
 ON public.attendance FOR SELECT
 TO authenticated
 USING (employee_id = auth.uid() OR public.is_admin(auth.uid()));
 
--- Insert: Employee logs own attendance OR Admin inserts
 DROP POLICY IF EXISTS "Users can insert own attendance" ON public.attendance;
 CREATE POLICY "Users can insert own attendance"
 ON public.attendance FOR INSERT
 TO authenticated
 WITH CHECK (employee_id = auth.uid() OR public.is_admin(auth.uid()));
 
--- Update: Employee updates own checkout OR Admin updates
 DROP POLICY IF EXISTS "Users can update own attendance" ON public.attendance;
 CREATE POLICY "Users can update own attendance"
 ON public.attendance FOR UPDATE
@@ -240,7 +234,6 @@ TO authenticated
 USING (employee_id = auth.uid() OR public.is_admin(auth.uid()))
 WITH CHECK (employee_id = auth.uid() OR public.is_admin(auth.uid()));
 
--- Delete: Admin only
 DROP POLICY IF EXISTS "Admins can delete attendance" ON public.attendance;
 CREATE POLICY "Admins can delete attendance"
 ON public.attendance FOR DELETE
@@ -248,21 +241,18 @@ TO authenticated
 USING (public.is_admin(auth.uid()));
 
 -- 3. LEAVE REQUESTS POLICIES
--- Read: Own leaves OR Admin reads all
 DROP POLICY IF EXISTS "Users read own leaves or admin reads all" ON public.leave_requests;
 CREATE POLICY "Users read own leaves or admin reads all"
 ON public.leave_requests FOR SELECT
 TO authenticated
 USING (employee_id = auth.uid() OR public.is_admin(auth.uid()));
 
--- Insert: Employee applies for leave
 DROP POLICY IF EXISTS "Users can insert own leave requests" ON public.leave_requests;
 CREATE POLICY "Users can insert own leave requests"
 ON public.leave_requests FOR INSERT
 TO authenticated
 WITH CHECK (employee_id = auth.uid() OR public.is_admin(auth.uid()));
 
--- Update: Admin approves/rejects leaves
 DROP POLICY IF EXISTS "Admins can update leave requests" ON public.leave_requests;
 CREATE POLICY "Admins can update leave requests"
 ON public.leave_requests FOR UPDATE
@@ -270,7 +260,6 @@ TO authenticated
 USING (public.is_admin(auth.uid()))
 WITH CHECK (public.is_admin(auth.uid()));
 
--- Delete: Own pending leave or Admin
 DROP POLICY IF EXISTS "Users can delete own pending leave or admin deletes" ON public.leave_requests;
 CREATE POLICY "Users can delete own pending leave or admin deletes"
 ON public.leave_requests FOR DELETE
@@ -278,21 +267,18 @@ TO authenticated
 USING ((employee_id = auth.uid() AND status = 'PENDING') OR public.is_admin(auth.uid()));
 
 -- 4. PAYROLL POLICIES
--- Read: Own payroll OR Admin reads all
 DROP POLICY IF EXISTS "Users read own payroll or admin reads all" ON public.payroll;
 CREATE POLICY "Users read own payroll or admin reads all"
 ON public.payroll FOR SELECT
 TO authenticated
 USING (employee_id = auth.uid() OR public.is_admin(auth.uid()));
 
--- Insert: Admin only
 DROP POLICY IF EXISTS "Admins can insert payroll" ON public.payroll;
 CREATE POLICY "Admins can insert payroll"
 ON public.payroll FOR INSERT
 TO authenticated
 WITH CHECK (public.is_admin(auth.uid()));
 
--- Update: Admin only
 DROP POLICY IF EXISTS "Admins can update payroll" ON public.payroll;
 CREATE POLICY "Admins can update payroll"
 ON public.payroll FOR UPDATE
@@ -303,12 +289,10 @@ WITH CHECK (public.is_admin(auth.uid()));
 -- ==============================================================================
 -- 5. STORAGE BUCKET (Avatars)
 -- ==============================================================================
--- Create avatars bucket in Supabase storage if not exists
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('avatars', 'avatars', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
 
--- Storage Policies
 DROP POLICY IF EXISTS "Avatar images are publicly accessible" ON storage.objects;
 CREATE POLICY "Avatar images are publicly accessible"
 ON storage.objects FOR SELECT
@@ -334,7 +318,58 @@ TO authenticated
 USING (bucket_id = 'avatars');
 
 -- ==============================================================================
--- 6. DEMO SEED INSTRUCTIONS (Run after signing up admin and employee)
+-- 6. CONFIRM USER EMAIL & SET ADMIN ROLE
 -- ==============================================================================
--- To promote an account to ADMIN, simply execute:
--- UPDATE public.profiles SET role = 'ADMIN' WHERE email = 'admin@dayflow.com';
+
+-- Auto-confirm email in Supabase auth
+UPDATE auth.users
+SET email_confirmed_at = NOW()
+WHERE email = 'vinay368k@gmail.com';
+
+-- Create or update Admin Profile for vinay368k@gmail.com
+INSERT INTO public.profiles (
+  id,
+  employee_id,
+  full_name,
+  email,
+  phone,
+  address,
+  job_title,
+  department,
+  joining_date,
+  role
+)
+SELECT 
+  id,
+  'ADM-001',
+  'Vinay',
+  email,
+  '+91 9482320333',
+  'Bangalore',
+  'HR Manager',
+  'Human Resources',
+  CURRENT_DATE,
+  'ADMIN'
+FROM auth.users
+WHERE email = 'vinay368k@gmail.com'
+ON CONFLICT (id) DO UPDATE 
+SET role = 'ADMIN',
+    full_name = EXCLUDED.full_name,
+    job_title = EXCLUDED.job_title,
+    department = EXCLUDED.department;
+
+-- Create initial payroll record
+INSERT INTO public.payroll (
+  employee_id,
+  basic_salary,
+  allowances,
+  deductions
+)
+SELECT 
+  id,
+  75000.00,
+  10000.00,
+  5000.00
+FROM auth.users
+WHERE email = 'vinay368k@gmail.com'
+ON CONFLICT (employee_id) DO NOTHING;
